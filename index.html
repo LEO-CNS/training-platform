@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>培训视频库 · 在线学习中心</title>
+  <link rel="stylesheet" href="./assets/css/style.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="./index.html" class="brand">
+    <span class="brand-icon">📚</span>
+    <span>培训视频库</span>
+  </a>
+  <div class="nav-links">
+    <a href="./index.html" class="nav-link active">课程</a>
+    <a href="./upload.html" class="btn btn-primary">+ 上传培训</a>
+  </div>
+</nav>
+
+<main class="container">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">全部培训课程</h1>
+      <p class="page-subtitle">支持在线观看讲义（PDF）与培训视频</p>
+    </div>
+    <div id="course-summary" style="font-size:13px;color:var(--text-muted);"></div>
+  </div>
+
+  <div id="course-grid" class="course-grid">
+    <div class="empty-state">
+      <div class="empty-icon">⏳</div>
+      <p>课程加载中...</p>
+    </div>
+  </div>
+</main>
+
+<div class="toast-container"></div>
+
+<script src="./assets/js/db.js"></script>
+<script>
+(async () => {
+  const grid = document.getElementById('course-grid');
+  const summary = document.getElementById('course-summary');
+
+  let list;
+  try {
+    list = await listAllCourses();
+  } catch (e) {
+    grid.innerHTML = `<div class="empty-state"><div class="empty-icon">⚠️</div>
+      <p>课程加载失败：${e.message}</p>
+      <p style="font-size:12px;margin-top:8px;">请确认后端服务已启动</p></div>`;
+    return;
+  }
+
+  const all = list.all;
+  summary.textContent = `共 ${all.length} 门课程`;
+
+  if (all.length === 0) {
+    grid.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">📭</div>
+        <p>还没有任何课程，请老师先去 <a href="./upload.html" style="color:var(--primary);">上传课程</a></p>
+      </div>`;
+    return;
+  }
+
+  grid.innerHTML = all.map(renderCard).join('');
+
+  grid.querySelectorAll('[data-delete]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!confirm('确认删除这门课程？文件将被永久删除。')) return;
+      try {
+        await deleteCourse(btn.dataset.delete);
+        showToast('课程已删除', 'success');
+        setTimeout(() => location.reload(), 600);
+      } catch (err) {
+        showToast('删除失败：' + err.message, 'error');
+      }
+    });
+  });
+})();
+
+function renderCard(c) {
+  const sizeText = c.fileSize ?
+    [c.fileSize.pdf ? '📄 ' + formatBytes(c.fileSize.pdf) : null,
+     c.fileSize.video ? '🎬 ' + formatBytes(c.fileSize.video) : null]
+      .filter(Boolean).join(' · ') : '';
+  return `
+    <div class="course-card" onclick="location.href='./player.html?id=${c.id}'">
+      <div class="course-thumb">
+        <span class="course-thumb-icon">${c.icon || '🎓'}</span>
+      </div>
+      <div class="course-info">
+        <div class="course-title">${escapeHtml(c.title)}</div>
+        <div class="course-meta">
+          <span class="course-meta-item">👤 ${escapeHtml(c.instructor || '匿名')}</span>
+          <span class="course-meta-item">📅 ${escapeHtml(c.uploadedAt || '')}</span>
+        </div>
+        <div class="course-desc">${escapeHtml(c.description || '暂无简介')}</div>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:8px;">${sizeText}</div>
+        <div class="course-tags">
+          ${c.hasPdf ? '<span class="tag">讲义</span>' : ''}
+          ${c.hasVideo ? '<span class="tag">视频</span>' : ''}
+          <button data-delete="${c.id}" class="btn btn-secondary"
+                  style="margin-left:auto;padding:3px 10px;font-size:11px;color:var(--danger);border-color:#fecaca;">
+            删除
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function escapeHtml(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+</script>
+
+</body>
+</html>

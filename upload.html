@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>上传培训课程 · 培训视频库</title>
+  <link rel="stylesheet" href="./assets/css/style.css">
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="./index.html" class="brand">
+    <span class="brand-icon">📚</span>
+    <span>培训视频库</span>
+  </a>
+  <div class="nav-links">
+    <a href="./index.html" class="nav-link">课程</a>
+    <a href="./upload.html" class="nav-link active">上传培训</a>
+    <a href="javascript:void(0)" class="nav-link" id="logout-link" style="font-size:12px;">切换账号</a>
+  </div>
+</nav>
+
+<main class="container">
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">上传培训课程</h1>
+      <p class="page-subtitle">填写课程信息，上传讲义与视频后所有人即可在线学习</p>
+    </div>
+    <div id="auth-status" style="font-size:12px;color:var(--text-muted);"></div>
+  </div>
+
+  <div id="alert-container"></div>
+
+  <form id="upload-form" class="upload-card">
+    <div class="alert alert-info">
+      🔐 当前为管理员模式。Token 已缓存在浏览器中，可点右上"切换账号"重新输入。
+    </div>
+
+    <div class="form-group">
+      <label class="form-label form-label-required">课程标题</label>
+      <input type="text" name="title" class="form-input"
+             placeholder="例如：Java 进阶培训 · 第 3 期" required maxlength="80">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">讲师</label>
+      <input type="text" name="instructor" class="form-input"
+             placeholder="讲师姓名" maxlength="40">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">课程简介</label>
+      <textarea name="description" class="form-textarea"
+                placeholder="一句话说清楚这门课讲什么" maxlength="300"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">讲义文件（PPT / PDF）</label>
+      <div class="file-drop" id="pdf-drop">
+        <div class="file-drop-icon">📄</div>
+        <div class="file-drop-text">
+          点击或拖拽上传<br>
+          <small>支持 PPT、PPTX、PDF，建议 ≤ 200MB</small>
+        </div>
+        <input type="file" id="pdf-input"
+               accept=".pdf,.ppt,.pptx,application/pdf,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+               style="display:none">
+      </div>
+      <div id="pdf-info" class="file-info" style="display:none;">
+        <span class="file-info-icon">📎</span>
+        <span class="file-info-name" id="pdf-name"></span>
+        <span class="file-info-name" id="pdf-size" style="flex:0 0 auto;color:var(--text-muted);"></span>
+      </div>
+      <p class="form-hint">💡 PDF 可在线预览全部页；PPT/PPTX 仅作为文件下载保留。</p>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">培训视频（MP4）</label>
+      <div class="file-drop" id="video-drop">
+        <div class="file-drop-icon">🎬</div>
+        <div class="file-drop-text">
+          点击或拖拽上传<br>
+          <small>支持 MP4 / WebM，建议 ≤ 1GB</small>
+        </div>
+        <input type="file" id="video-input" accept="video/mp4,video/webm,video/*" style="display:none">
+      </div>
+      <div id="video-info" class="file-info" style="display:none;">
+        <span class="file-info-icon">🎞️</span>
+        <span class="file-info-name" id="video-name"></span>
+        <span class="file-info-name" id="video-size" style="flex:0 0 auto;color:var(--text-muted);"></span>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">课程图标</label>
+      <select name="icon" class="form-input" style="max-width:160px;">
+        <option value="🎓">🎓 通用</option>
+        <option value="☕">☕ Java</option>
+        <option value="🤖">🤖 AI</option>
+        <option value="💻">💻 开发</option>
+        <option value="📊">📊 数据</option>
+        <option value="🎯">🎯 目标</option>
+        <option value="📘">📘 教材</option>
+      </select>
+    </div>
+
+    <div class="form-actions">
+      <a href="./index.html" class="btn btn-secondary">取消</a>
+      <button type="submit" class="btn btn-primary" id="submit-btn">上传到服务器</button>
+    </div>
+  </form>
+</main>
+
+<div class="toast-container"></div>
+
+<script src="./assets/js/db.js"></script>
+<script>
+(function () {
+  // 登录态
+  const status = document.getElementById('auth-status');
+  const logoutLink = document.getElementById('logout-link');
+  if (getAdminToken()) {
+    status.innerHTML = `✅ 已登录管理员`;
+  } else {
+    status.innerHTML = `⚠️ 未登录，点击右上"上传"或提交时会要求输入 token`;
+  }
+  logoutLink.onclick = () => {
+    setAdminToken('');
+    alert('已退出，请重新上传课程时输入 token');
+    location.reload();
+  };
+
+  const form = document.getElementById('upload-form');
+  const alertBox = document.getElementById('alert-container');
+  const submitBtn = document.getElementById('submit-btn');
+  let pdfFile = null, videoFile = null;
+
+  setupDropZone('pdf-drop', 'pdf-input', file => {
+    pdfFile = file;
+    document.getElementById('pdf-info').style.display = 'flex';
+    document.getElementById('pdf-name').textContent = file.name;
+    document.getElementById('pdf-size').textContent = formatBytes(file.size);
+  });
+  setupDropZone('video-drop', 'video-input', file => {
+    videoFile = file;
+    document.getElementById('video-info').style.display = 'flex';
+    document.getElementById('video-name').textContent = file.name;
+    document.getElementById('video-size').textContent = formatBytes(file.size);
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const token = requireAdmin();
+    if (!token) { showAlert('需要管理员 token 才能上传', 'error'); return; }
+
+    const title = form.title.value.trim();
+    if (!title) { showAlert('请填写课程标题', 'error'); return; }
+    if (!pdfFile && !videoFile) { showAlert('请至少上传讲义或视频中的一个', 'error'); return; }
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span> 上传中...';
+
+    const fd = new FormData();
+    fd.append('title', title);
+    fd.append('instructor', form.instructor.value.trim());
+    fd.append('description', form.description.value.trim());
+    fd.append('icon', form.icon.value);
+    if (pdfFile) fd.append('pdf', pdfFile);
+    if (videoFile) fd.append('video', videoFile);
+
+    try {
+      const result = await uploadCourse(fd);
+      showAlert('课程已成功上传！即将跳转到播放页...', 'success');
+      showToast('上传成功', 'success');
+      setTimeout(() => {
+        location.href = `./player.html?id=${result.id}`;
+      }, 1200);
+    } catch (err) {
+      console.error(err);
+      showAlert('上传失败：' + err.message, 'error');
+      if (err.message.includes('401')) {
+        setAdminToken('');
+        showAlert('token 无效或已过期，请重新输入', 'error');
+      }
+      submitBtn.disabled = false;
+      submitBtn.textContent = '上传到服务器';
+    }
+  });
+
+  function showAlert(msg, type) {
+    alertBox.innerHTML = `<div class="alert alert-${type}">${escapeHtml(msg)}</div>`;
+    if (type === 'error') setTimeout(() => alertBox.innerHTML = '', 6000);
+  }
+  function setupDropZone(zoneId, inputId, onPick) {
+    const zone = document.getElementById(zoneId);
+    const input = document.getElementById(inputId);
+    zone.addEventListener('click', () => input.click());
+    input.addEventListener('change', e => { if (e.target.files[0]) onPick(e.target.files[0]); });
+    ['dragenter', 'dragover'].forEach(ev => zone.addEventListener(ev, e => {
+      e.preventDefault(); zone.classList.add('dragover');
+    }));
+    ['dragleave', 'drop'].forEach(ev => zone.addEventListener(ev, e => {
+      e.preventDefault(); zone.classList.remove('dragover');
+    }));
+    zone.addEventListener('drop', e => { if (e.dataTransfer.files[0]) onPick(e.dataTransfer.files[0]); });
+  }
+  function escapeHtml(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+})();
+</script>
+
+</body>
+</html>

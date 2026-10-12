@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>课程播放 · 培训视频库</title>
+  <link rel="stylesheet" href="./assets/css/style.css">
+  <style>
+    .spinner { display:inline-block;width:12px;height:12px;border:2px solid white;
+      border-top-color:transparent;border-radius:50%;animation:spin 0.8s linear infinite;
+      margin-right:4px;vertical-align:middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<nav class="navbar">
+  <a href="./index.html" class="brand">
+    <span class="brand-icon">📚</span>
+    <span>培训视频库</span>
+  </a>
+  <div class="nav-links">
+    <a href="./index.html" class="nav-link">← 返回课程列表</a>
+  </div>
+</nav>
+
+<div id="header" style="padding:18px 24px;background:white;border-bottom:1px solid var(--border);">
+  <h1 id="course-title" style="font-size:20px;font-weight:700;"></h1>
+  <div id="course-sub" style="font-size:13px;color:var(--text-muted);margin-top:4px;"></div>
+</div>
+
+<div class="player-layout">
+
+  <div class="player-panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        📄 <span id="pdf-label">课程讲义</span>
+        <span class="panel-badge" id="pdf-page-info">0 / 0 页</span>
+      </div>
+      <div class="player-toolbar">
+        <button class="toolbar-btn" id="btn-prev-page">‹ 上一页</button>
+        <button class="toolbar-btn" id="btn-next-page">下一页 ›</button>
+        <button class="toolbar-btn" id="btn-pdf-zoom-in">放大</button>
+        <button class="toolbar-btn" id="btn-pdf-zoom-out">缩小</button>
+        <button class="toolbar-btn" id="btn-open-pdf" title="在新窗口打开">↗</button>
+      </div>
+    </div>
+    <div class="panel-body" id="pdf-panel">
+      <div class="pdf-placeholder" id="pdf-placeholder">
+        <div><div style="font-size:48px;margin-bottom:12px;">📄</div>
+        <div id="pdf-placeholder-text">加载讲义中...</div></div>
+      </div>
+      <div id="pdf-viewer" class="pdf-viewer" style="display:none;"></div>
+    </div>
+    <div class="player-footer">
+      <span style="font-size:12px;color:var(--text-muted);" id="pdf-state">未加载</span>
+      <div class="progress-bar"><div class="progress-fill" id="pdf-progress" style="width:0"></div></div>
+      <span style="font-size:12px;color:var(--text-muted);" id="pdf-percent">0%</span>
+    </div>
+  </div>
+
+  <div class="player-panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        🎬 <span id="video-label">培训视频</span>
+        <span class="panel-badge" id="video-badge">未加载</span>
+      </div>
+      <div class="player-toolbar">
+        <select id="video-speed" class="toolbar-btn" style="padding:5px 8px;">
+          <option value="0.75">0.75x</option>
+          <option value="1" selected>1x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
+        <button class="toolbar-btn" id="btn-fullscreen">全屏</button>
+      </div>
+    </div>
+    <div class="panel-body" id="video-panel">
+      <div class="pdf-placeholder">
+        <div><div style="font-size:48px;margin-bottom:12px;">🎬</div>
+        <div>加载视频中...</div></div>
+      </div>
+    </div>
+    <div class="player-footer">
+      <span style="font-size:12px;color:var(--text-muted);" id="video-time">00:00 / 00:00</span>
+      <div class="progress-bar"><div class="progress-fill" id="video-progress" style="width:0"></div></div>
+      <span style="font-size:12px;color:var(--text-muted);">培训录制</span>
+    </div>
+  </div>
+
+</div>
+
+<div class="toast-container"></div>
+
+<script src="./assets/js/db.js"></script>
+<script type="module">
+import * as pdfjsLib from 'https://mozilla.github.io/pdf.js/build/pdf.mjs';
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://mozilla.github.io/pdf.js/build/pdf.worker.mjs';
+
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const id = params.get('id');
+  if (!id) {
+    document.getElementById('header').innerHTML =
+      '<p style="color:var(--danger);">缺少课程 ID，请从课程列表进入</p>';
+    return;
+  }
+
+  let course;
+  try {
+    course = await loadBuiltinCourseDetail(id);
+  } catch (e) {
+    document.getElementById('header').innerHTML =
+      `<p style="color:var(--danger);">课程加载失败：${e.message}</p>`;
+    return;
+  }
+
+  document.getElementById('course-title').textContent = course.title;
+  document.getElementById('course-sub').innerHTML =
+    `讲师：${escapeHtml(course.instructor || '匿名')} · 上传日期：${escapeHtml(course.uploadedAt || '')} · ${escapeHtml(course.description || '')}`;
+
+  if (course.pdfUrl) {
+    loadPDF(course.pdfUrl, course.pdf);
+    document.getElementById('btn-open-pdf').onclick = () => window.open(course.pdfUrl, '_blank');
+  } else {
+    document.getElementById('pdf-placeholder-text').textContent = '本课程未提供讲义文件';
+    document.getElementById('pdf-state').textContent = '无讲义';
+  }
+
+  if (course.videoUrl) {
+    loadVideo(course.videoUrl);
+  } else {
+    document.getElementById('video-panel').innerHTML = `
+      <div class="pdf-placeholder"><div><div style="font-size:48px;margin-bottom:12px;">🎬</div><div>本课程未提供视频</div></div></div>`;
+    document.getElementById('video-time').textContent = '无视频';
+    document.getElementById('video-badge').textContent = '无视频';
+  }
+})();
+
+let pdfDoc = null, currentPage = 1, pdfScale = 1.4, totalPages = 0;
+
+async function loadPDF(url, fileName) {
+  document.getElementById('pdf-label').textContent = fileName ? `讲义 · ${fileName}` : '课程讲义';
+  try {
+    pdfDoc = await pdfjsLib.getDocument(url).promise;
+    totalPages = pdfDoc.numPages;
+    document.getElementById('pdf-page-info').textContent = `${totalPages} 页`;
+    document.getElementById('pdf-placeholder').style.display = 'none';
+    document.getElementById('pdf-viewer').style.display = 'flex';
+    document.getElementById('pdf-state').textContent = `已加载 ${totalPages} 页`;
+    await renderCurrentPage();
+    renderRestPages();
+  } catch (err) {
+    console.error('PDF 加载失败', err);
+    document.getElementById('pdf-placeholder-text').textContent = '讲义加载失败：' + err.message;
+    document.getElementById('pdf-state').textContent = '加载失败';
+  }
+}
+
+async function renderCurrentPage() {
+  if (!pdfDoc) return;
+  const page = await pdfDoc.getPage(currentPage);
+  const viewport = page.getViewport({ scale: pdfScale });
+  const wrap = document.createElement('div');
+  wrap.className = 'pdf-page';
+  wrap.dataset.page = currentPage;
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.height = viewport.height;
+  canvas.width = viewport.width;
+  wrap.appendChild(canvas);
+  const viewer = document.getElementById('pdf-viewer');
+  const existing = viewer.querySelector(`[data-page="${currentPage}"]`);
+  if (existing) existing.replaceWith(wrap); else viewer.appendChild(wrap);
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  updatePdfProgress();
+  document.getElementById('pdf-page-info').textContent = `${currentPage} / ${totalPages} 页`;
+}
+
+async function renderRestPages() {
+  if (!pdfDoc) return;
+  for (let p = 1; p <= totalPages; p++) {
+    if (p === currentPage) continue;
+    if (document.querySelector(`[data-page="${p}"]`)) continue;
+    try {
+      const page = await pdfDoc.getPage(p);
+      const viewport = page.getViewport({ scale: pdfScale });
+      const wrap = document.createElement('div');
+      wrap.className = 'pdf-page';
+      wrap.dataset.page = p;
+      const canvas = document.createElement('canvas');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      wrap.appendChild(canvas);
+      const ctx = canvas.getContext('2d');
+      document.getElementById('pdf-viewer').appendChild(wrap);
+      await page.render({ canvasContext: ctx, viewport }).promise;
+      updatePdfProgress();
+    } catch (e) {}
+  }
+}
+
+function rerenderAll(scale) {
+  pdfScale = scale;
+  document.getElementById('pdf-viewer').innerHTML = '';
+  renderCurrentPage().then(renderRestPages);
+}
+
+function updatePdfProgress() {
+  const rendered = document.getElementById('pdf-viewer').querySelectorAll('.pdf-page').length;
+  const pct = totalPages ? Math.round((rendered / totalPages) * 100) : 0;
+  document.getElementById('pdf-progress').style.width = pct + '%';
+  document.getElementById('pdf-percent').textContent = pct + '%';
+}
+
+document.getElementById('btn-prev-page').onclick = () => {
+  if (currentPage > 1) { currentPage--; renderCurrentPage();
+    document.querySelector(`[data-page="${currentPage}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+document.getElementById('btn-next-page').onclick = () => {
+  if (currentPage < totalPages) { currentPage++; renderCurrentPage();
+    document.querySelector(`[data-page="${currentPage}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+document.getElementById('btn-pdf-zoom-in').onclick = () => { if (pdfScale < 3) rerenderAll(pdfScale + 0.2); };
+document.getElementById('btn-pdf-zoom-out').onclick = () => { if (pdfScale > 0.6) rerenderAll(pdfScale - 0.2); };
+
+let videoEl = null;
+function loadVideo(url) {
+  const panel = document.getElementById('video-panel');
+  panel.innerHTML = `
+    <div class="video-wrapper">
+      <video id="course-video" controls preload="metadata">
+        <source src="${url}" type="video/mp4">
+        您的浏览器不支持视频标签。
+      </video>
+    </div>`;
+  videoEl = document.getElementById('course-video');
+  document.getElementById('video-badge').textContent = '已加载';
+  videoEl.addEventListener('loadedmetadata', () => {
+    document.getElementById('video-badge').textContent = `已加载 · ${formatDuration(videoEl.duration)}`;
+  });
+  videoEl.addEventListener('timeupdate', () => {
+    if (!videoEl.duration) return;
+    document.getElementById('video-time').textContent =
+      `${formatDuration(videoEl.currentTime)} / ${formatDuration(videoEl.duration)}`;
+    document.getElementById('video-progress').style.width =
+      (videoEl.currentTime / videoEl.duration * 100) + '%';
+  });
+}
+
+document.getElementById('video-speed').onchange = (e) => {
+  if (videoEl) videoEl.playbackRate = parseFloat(e.target.value);
+};
+document.getElementById('btn-fullscreen').onclick = () => {
+  const panel = document.getElementById('video-panel');
+  if (panel.requestFullscreen) panel.requestFullscreen();
+  else if (panel.webkitRequestFullscreen) panel.webkitRequestFullscreen();
+};
+
+function escapeHtml(str) {
+  return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+</script>
+
+</body>
+</html>

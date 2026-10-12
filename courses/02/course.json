@@ -1,0 +1,11 @@
+{
+  "id": "02",
+  "title": "AI 工程化实战培训",
+  "instructor": "李老师",
+  "description": "从大模型应用架构到私有化部署方案，再到合规与安全基线，面向 AI 集成项目交付团队。",
+  "icon": "🤖",
+  "pdf": "notes.pdf",
+  "video": null,
+  "uploadedAt": "2026-10-11",
+  "fileSize": { "pdf": 104431, "video": 0 }
+}
